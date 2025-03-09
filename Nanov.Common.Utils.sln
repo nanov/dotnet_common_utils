@@ -1,0 +1,27 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nanov.Common.Utils.ObjectPool", "src\Nanov.Common.Utils.ObjectPool\Nanov.Common.Utils.ObjectPool.csproj", "{A693E7C2-E081-4F41-9A78-CD1CCC28446C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{73A13BA2-9D55-43E4-A667-E2F1CDD937E7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Nanov.Common.Utils.ObjectPool.UnitTests", "tests\Nanov.Common.Utils.ObjectPool.UnitTests\Nanov.Common.Utils.ObjectPool.UnitTests.csproj", "{3391EA05-C6F6-4180-8BA5-D7155CF5CB72}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{A693E7C2-E081-4F41-9A78-CD1CCC28446C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A693E7C2-E081-4F41-9A78-CD1CCC28446C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A693E7C2-E081-4F41-9A78-CD1CCC28446C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A693E7C2-E081-4F41-9A78-CD1CCC28446C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3391EA05-C6F6-4180-8BA5-D7155CF5CB72}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3391EA05-C6F6-4180-8BA5-D7155CF5CB72}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3391EA05-C6F6-4180-8BA5-D7155CF5CB72}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3391EA05-C6F6-4180-8BA5-D7155CF5CB72}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3391EA05-C6F6-4180-8BA5-D7155CF5CB72} = {73A13BA2-9D55-43E4-A667-E2F1CDD937E7}
+	EndGlobalSection
+EndGlobal
