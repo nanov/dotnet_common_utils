@@ -42,6 +42,7 @@ public sealed class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObje
 		_pool = new ReferenceContainer[_poolSize];
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public T Rent(TConstructParams param) {
 		// fast path
 		var item = _fastItem;
@@ -79,6 +80,7 @@ public sealed class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObje
 		return new RentedValue<T>(this, item);
 	}
 	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Return(T obj) {
 		if (!_strategy.Clean(obj))
 			return;

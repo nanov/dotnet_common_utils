@@ -17,11 +17,23 @@ public interface IObjectPool<T, in TConstructParams> where T : class {
 public readonly ref struct RentedValue<T> where T : class {
 	private readonly IObjectPool<T> _pool;
 	private readonly T _value;
-	internal RentedValue(IObjectPool<T> pool, T value)
-		=> (_pool, _value) = (pool, value);
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	internal RentedValue(IObjectPool<T> pool, T value) {
+		_pool = pool;
+		_value = value;
+	}
+	
+	public T Value {
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		get => _value;
+	}
+	
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Dispose()
 		=> _pool.Return(_value);
+	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
+	public static implicit operator T(RentedValue<T> rentedValue) => rentedValue._value;
 }
 

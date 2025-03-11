@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Nanov.Common.Utils.ObjectPool;
 
@@ -12,19 +13,25 @@ public sealed class ObjectPool<T, TStrategy, TConstructParams> : IObjectPool<T>,
 	private readonly uint _capacity;
 	
 	private uint _count;
-	public uint Count => _count;
-	
+
+	public uint Count {
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		get => _count;
+	}
+
 	public ObjectPool(TStrategy strategy, uint maxCapacity) {
 		_capacity = maxCapacity;
 		_strategy = strategy;
 		_pool = new PoolEntry[maxCapacity];
 	}
 	
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public T Rent(TConstructParams param) {
 		if (_count == 0)
 			return _strategy.Create(param);
 		
-		ref var e = ref _pool[--_count];
+		// eliminate bounds checking
+		ref var e =  ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_pool), --_count);
 		Debug.Assert(e.Value is not null);
 		var item = e.Value!;
 		e.Value = null;
@@ -38,14 +45,16 @@ public sealed class ObjectPool<T, TStrategy, TConstructParams> : IObjectPool<T>,
 		return new RentedValue<T>(this, item);
 	}
 
+	[MethodImpl(MethodImplOptions.AggressiveInlining)]
 	public void Return(T item) {
 		if (!_strategy.Clean(item))
 			return;
 		
 		if (_count >= _capacity)
 			return;
-		
-		ref var e = ref _pool[_count++];
+
+		// Eliminate bounds checking
+		ref var e =  ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_pool), _count++);
 		Debug.Assert(e.Value is null);
 		e.Value = item;
 	}
