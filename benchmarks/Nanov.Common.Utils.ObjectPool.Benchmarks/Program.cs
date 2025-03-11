@@ -10,6 +10,7 @@ using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Running;
+using Microsoft.Extensions.ObjectPool;
 
 namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 	// A simple test class that we'll allocate/pool
@@ -34,6 +35,18 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 		}
 	}
 
+	public sealed class TestObjectPolicy : IPooledObjectPolicy<TestObject> {
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public TestObject Create() {
+			var obj = new TestObject { Id = 1 };
+			return obj;
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public bool Return(TestObject obj) {
+			return true;
+		}
+	}
 	// Our object pool strategy
 	public struct TestObjectStrategy : IObjectPoolStrategy<TestObject, int> {
 		[Pure]
@@ -51,10 +64,8 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 
 		[Pure]
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public void Clean(TestObject value) {
-			// value.Id = -1;
-			// value.NameLength = 0;
-			// Array.Clear(value.Buffer, 0, value.Buffer.Length);
+		public bool Clean(TestObject value) {
+			return true;
 		}
 	}
 
@@ -71,7 +82,7 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 	[Config(typeof(BenchmarkConfig))]
 	public class ObjectPoolBenchmarks {
 		private ILogger _logger = new ConsoleLogger();
-		private int _highContentionThreadCount = Process.GetCurrentProcess().Threads.Count * 2;
+		private readonly int _highContentionThreadCount = Process.GetCurrentProcess().Threads.Count * 2;
 		private const int ThreadCount = 8;
 		private class BenchmarkConfig : ManualConfig {
 			public BenchmarkConfig() {
@@ -79,20 +90,25 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 			}
 		}
 
-		// [Params(10, 100, 1000)]
-		[Params(10, 100, 1000)] public int OperationsPerInvoke { get; set; }
+		[Params(10, 50, 100, 500)]
+		public int OperationsPerInvoke { get; set; }
+		
 		private ConcurrentObjectPool<TestObject, TestObjectStrategy, int> _concurrentObjectPool;
 		private ObjectPool<TestObject, TestObjectStrategy, int> _objectPool;
+		private DefaultObjectPool<TestObject> _defaultObjectPool;
 		private readonly TestObjectStrategy _strategy = new TestObjectStrategy();
+		private readonly TestObjectPolicy _policy = new TestObjectPolicy();
 
 		[GlobalSetup]
 		public void IterationSetup() {
 			const int poolSize = 1000;
+			_defaultObjectPool = new DefaultObjectPool<TestObject>(_policy, poolSize);
 			_concurrentObjectPool = new ConcurrentObjectPool<TestObject, TestObjectStrategy, int>(_strategy, poolSize);
 			_objectPool = new ObjectPool<TestObject, TestObjectStrategy, int>(_strategy, poolSize);
 			for (var i = 0; i < poolSize; i++) {
 				_concurrentObjectPool.Return(_strategy.Create(i));
 				_objectPool.Return(_strategy.Create(i));
+				_defaultObjectPool.Return(_policy.Create());
 			}
 		}
 #if SINGLE_THREADED
@@ -114,6 +130,17 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 				using var _ = _objectPool.RentValue(i, out var obj);
 				// Use the object to prevent dead code elimination
 				if (obj.Id < 0) throw new Exception("Should never happen");
+			}
+		}
+		
+		[Benchmark(Description = "DefaultObjectPool")]
+		[BenchmarkCategory("SingleThreaded")]
+		public void DefaultObjectPool_SingleThreaded() {
+			for (var i = 0; i < OperationsPerInvoke; i++) {
+				var obj = _defaultObjectPool.Get();
+				// Use the object to prevent dead code elimination
+				if (obj.Id < 0) throw new Exception("Should never happen");
+				_defaultObjectPool.Return(obj);
 			}
 		}
 #endif
@@ -138,7 +165,6 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 		[Benchmark(Description = "ConcurrentObjectPool")]
 		[BenchmarkCategory("MultiThreaded")]
 		public void ConcurrentObjectPool_MultiThreaded() {
-
 			Parallel.For(0, ThreadCount, threadId => {
 				var iterationsPerThread = OperationsPerInvoke;
 				for (var i = 0; i < iterationsPerThread; i++) {
@@ -150,6 +176,19 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 		}
 
 		// More realistic scenario with work simulation
+		[Benchmark(Description = "DefaultObjectPool")]
+		[BenchmarkCategory("MultiThreaded")]
+		public void DefaultObjectPool_MultiThreaded() {
+			Parallel.For(0, ThreadCount, threadId => {
+				var iterationsPerThread = OperationsPerInvoke;
+				for (var i = 0; i < iterationsPerThread; i++) {
+					var obj = _defaultObjectPool.Get();
+					// Use the object to prevent dead code elimination
+					if (obj.Id < 0) throw new Exception("Should never happen");
+					_defaultObjectPool.Return(obj);
+				}
+			});
+		}
 		[Benchmark(Description = "DirectAllocation", Baseline = true)]
 		[BenchmarkCategory("RealWorld")]
 		public void DirectAllocation_WithWork() {
@@ -173,6 +212,18 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 			}
 		}
 
+		[Benchmark(Description = "DefaultObjectPool")]
+		[BenchmarkCategory("RealWorld")]
+		public void DefaultObjectPool_WithWork() {
+			var iterations = OperationsPerInvoke;
+			for (var i = 0; i < iterations; i++) {
+				var obj = _defaultObjectPool.Get();
+				// Simulate some work with the object
+				SimulateWork(obj);
+				_defaultObjectPool.Return(obj);
+			}
+		}
+		
 		[Benchmark(Description = "DirectAllocation", Baseline = true)]
 		[BenchmarkCategory("RealWorldParallel")]
 		public void DirectAllocation_WithWorkParallel() {
@@ -196,6 +247,19 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 				for (var i = 0; i < iterationsPerThread; i++) {
 					using var _ = _concurrentObjectPool.RentValue(threadId * iterationsPerThread + i, out var obj);
 					SimulateWork(obj);
+				}
+			});
+		}
+		
+		[Benchmark(Description = "DefaultObjectPool")]
+		[BenchmarkCategory("RealWorldParallel")]
+		public void DefaultObjectPool_WithWorkParallel() {
+			Parallel.For(0, ThreadCount, threadId => {
+				var iterationsPerThread = OperationsPerInvoke;
+				for (var i = 0; i < iterationsPerThread; i++) {
+					var obj = _defaultObjectPool.Get();
+					SimulateWork(obj);
+					_defaultObjectPool.Return(obj);
 				}
 			});
 		}
@@ -229,9 +293,24 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 				}
 			});
 		}
+		
+		[Benchmark(Description = "DefaultObjectPool")]
+		[BenchmarkCategory("HighContention")]
+		public void DefaultObjectPool_HighContention() {
+			Parallel.For(0, _highContentionThreadCount, t => {
+				var len = OperationsPerInvoke;
+				for (var i = 0; i < len; i++) {
+					// All threads request objects with the same ID to simulate high contention
+					var obj = _defaultObjectPool.Get();
+					if  (obj.Id < 0)
+						throw new Exception("Should never happen");
+					_defaultObjectPool.Return(obj);
+				}
+			});
+		}
 #endif
 
-		private void SimulateWork(TestObject obj) {
+		private static void SimulateWork(TestObject obj) {
 			// Simulate some CPU-bound work
 			for (var i = 0; i < TestObject.BufferSize; i += 64)
 				obj.Buffer[i] = (byte)(obj.Id & 0xFF);
@@ -240,7 +319,7 @@ namespace Nanov.Common.Utils.ObjectPool.Benchmarks {
 			obj.Buffer[0] = (byte)(obj.NameLength & 0xFF);
 
 			// Small delay to simulate some work
-			SpinWait.SpinUntil(() => false, 3);
+			SpinWait.SpinUntil(static () => false, 3);
 		}
 	}
 }

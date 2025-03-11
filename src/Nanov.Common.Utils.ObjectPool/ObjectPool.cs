@@ -1,8 +1,9 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
 namespace Nanov.Common.Utils.ObjectPool;
 
-public class ObjectPool<T, TStrategy, TConstructParams> : IObjectPool<T>, IObjectPool<T, TConstructParams>
+public sealed class ObjectPool<T, TStrategy, TConstructParams> : IObjectPool<T>, IObjectPool<T, TConstructParams>
 	where T : class
 	where TStrategy : struct, IObjectPoolStrategy<T, TConstructParams> {
 
@@ -24,7 +25,9 @@ public class ObjectPool<T, TStrategy, TConstructParams> : IObjectPool<T>, IObjec
 			return _strategy.Create(param);
 		
 		ref var e = ref _pool[--_count];
-		var item = e.Retrieve();
+		Debug.Assert(e.Value is not null);
+		var item = e.Value!;
+		e.Value = null;
 		_strategy.Prepare(item, param);
 		return item;
 	}
@@ -36,26 +39,18 @@ public class ObjectPool<T, TStrategy, TConstructParams> : IObjectPool<T>, IObjec
 	}
 
 	public void Return(T item) {
-		_strategy.Clean(item);
+		if (!_strategy.Clean(item))
+			return;
+		
 		if (_count >= _capacity)
 			return;
+		
 		ref var e = ref _pool[_count++];
-		e.Set(item);
+		Debug.Assert(e.Value is null);
+		e.Value = item;
 	}
 
 	private struct PoolEntry {
-		private T? _value;
-
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public T Retrieve() {
-			var item = _value!;
-			_value = null;
-			return item;
-		}
-		
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public void Set(T value)
-			=> _value = value;
+		public T? Value;
 	}
-		
 }

@@ -14,5 +14,5 @@ public interface IObjectPoolStrategy<T, in TConstructParams> where T : class {
 
 	[Pure]
 	[MethodImpl(MethodImplOptions.AggressiveInlining)]
-	void Clean(T value);
+	bool Clean(T value);
 }

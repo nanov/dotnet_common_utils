@@ -1,10 +1,5 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using NUnit.Framework;
-using Nanov.Common.Utils.ObjectPool;
 using NUnit.Framework.Legacy;
 
 namespace Nanov.Common.Utils.ObjectPool.UnitTests;

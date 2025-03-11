@@ -1,10 +1,11 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Nanov.Common.Utils.ObjectPool;
 
 
-public class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObjectPool<T>, IObjectPool<T, TConstructParams>
+public sealed class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObjectPool<T>, IObjectPool<T, TConstructParams>
 	where T : class
 	where TStrategy : struct, IObjectPoolStrategy<T, TConstructParams> {
 	private readonly TStrategy _strategy;
@@ -13,15 +14,21 @@ public class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObjectPool<
 	private readonly uint _poolSize;
 	private const uint MaxStoredIncrement = 3;
 
-	private ReferenceContainer _pocket;
+	private T? _fastItem;
 	private readonly Memory<ReferenceContainer> _pool;
 
 	public uint Count {
 			get {
-				var count = _pocket.Count;
+				var count = _fastItem is null ? 0u : 1u;
 				
 				var maxStored = _maxStored;
-				var span = _pool.Span.Slice(0, (int)maxStored);
+				if (maxStored is 0)
+					return count;
+				
+				var span = maxStored<_poolSize 
+					? _pool.Span.Slice(0, (int)maxStored)
+					: _pool.Span;
+				
 				foreach (ref var el in span)
 					count += el.Count;
 					
@@ -36,9 +43,12 @@ public class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObjectPool<
 	}
 
 	public T Rent(TConstructParams param) {
-		if (_pocket.TryRetrieve(out var item)) {
-			_strategy.Prepare(item, param);
-			return item;
+		// fast path
+		var item = _fastItem;
+		if (item is not null &&
+				item == Interlocked.CompareExchange(ref _fastItem, null, item)) {
+				_strategy.Prepare(item, param); 
+				return item;
 		}
 
 		// thread-safe read
@@ -51,8 +61,11 @@ public class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObjectPool<
 			: _pool.Span;
 
 		foreach (ref var element in span) {
-			if (!element.TryRetrieve(out item))
-				continue;
+			item = element.Value;
+			if (item is null
+					|| item != Interlocked.CompareExchange(ref element.Value, null, item))
+					continue;
+			
 			_strategy.Prepare(item, param);
 			return item;
 		}
@@ -67,16 +80,25 @@ public class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObjectPool<
 	}
 	
 	public void Return(T obj) {
-		_strategy.Clean(obj);
-		if (_pocket.SetIfNull(obj))
+		if (!_strategy.Clean(obj))
 			return;
+
+		// fast-path
+		// intentionally not using interlocked
+		if (_fastItem is null) {
+			_fastItem = obj;
+			return;
+		}
 		
 		var span = _pool.Span;
 		var i = 0;
 		foreach (ref var element in span) {
 			i++;
-			if (!element.SetIfNull(obj))
+			if (element.Value is not null)
 				continue;
+			
+			// intentionally not using interlocked
+			element.Value = obj;
 			
 			var m = _maxStored;
 			if (i > m) Interlocked.CompareExchange(ref _maxStored, Math.Min(m + MaxStoredIncrement, _poolSize), m);
@@ -86,13 +108,14 @@ public class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObjectPool<
 
 	
 	private struct ReferenceContainer {
-		private T? _value;
+		internal T? Value;
 
+		/*
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public bool SetIfNull(T value) {
-			if (_value is not null)
+			if (Value is not null)
 				return false;
-			_value = value;
+			Value = value;
 			return true;
 		}
 
@@ -102,12 +125,13 @@ public class ConcurrentObjectPool<T, TStrategy, TConstructParams> : IObjectPool<
 
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public bool TryRetrieve([MaybeNullWhen(false)] out T item) {
-			item = _value;
+			item = Value;
 			return (item is not null
-							&& item == Interlocked.CompareExchange(ref _value, null, item));
+							&& item == Interlocked.CompareExchange(ref Value, null, item));
 		}
+		*/
 		
 		public uint Count
-			=> _value is null ? (uint)0 : 1;
+			=> Value is null ? (uint)0 : 1;
 	}
 }

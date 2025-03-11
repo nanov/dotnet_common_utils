@@ -9,9 +9,10 @@ public struct TestPoolStrategy : IObjectPoolStrategy<TestObject, string> {
 		obj.PrepareCount++;
 	}
 
-	public void Clean(TestObject obj) {
+	public bool Clean(TestObject obj) {
 		obj.Data = null;
 		obj.CleanCount++;
+		return true;
 	}
 }
 
